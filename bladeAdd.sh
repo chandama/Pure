@@ -4,9 +4,9 @@
 #                                                                                   #
 #        Script designed to perform health checks and add unclaimed blades          #
 #                                                                                   #
-#		 Author: Chandler Taylor									                #
-#		Version: 1.1																#
-#		Updated: 2021-04-21															#
+#		 Author: Chandler Taylor					    #
+#		Version: 1.1							    #
+#		Updated: 2021-04-21						    #
 #                                                                                   #
 #####################################################################################
 
