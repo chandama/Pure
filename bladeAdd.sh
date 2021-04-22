@@ -1,23 +1,36 @@
 #!/bin/bash
 
+#####################################################################################
+#                                                                                   #
+#        Script designed to perform health checks and add unclaimed blades          #
+#                                                                                   #
+#		 Author: Chandler Taylor									                #
+#		Version: 1.1																#
+#		Updated: 2021-04-21															#
+#                                                                                   #
+#####################################################################################
+
+
+
 ### Command line args
-declare -i chassisNum=$1
-declare -i bladeStart=$2
-declare -i bladeEnd=$3
+	declare -i chassisNum=$1
+	declare -i bladeStart=$2
+	declare -i bladeEnd=$3
 
-#DONE 		 Get the node ID's and throw them into an array once you parse them and just get the number out and strip the rest.
-#DONE 		 Check for master XFM
-#DONE 		 Confirm chassis and blade selection is correct
-#DONE		 Run checks for clean blades and verify that all elements are empty
+### Color codes for use in ERROR and PASS messages
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
 
-populate_array(){
+populate_array()
+{
+	echo "Getting node IDs for CH$chassisNum.FB$bladeStart-$bladeEnd"
 
-	echo "Getting node IDs for CH.$chassisNum.FB$bladeStart-$bladeEnd..."
 	declare -a node_id_array=()
 
 	for ((i=$bladeStart;i<=$bladeEnd;i++))
 	do
-	        ### Insert into node_id_array
+	        ### Insert output of hal-show into node_id_array
 	        node_id_array+=("$(exec.py -n$chassisNum.$i -- 'hal-show -e /local/ | jq .node_id')")
 	done
 
@@ -31,13 +44,12 @@ populate_array(){
 	        substring=$(echo ${node_id_array[$i]} | cut -d'"' -f 2)
 	        node_id_array[$i]=$substring
 	done
-	echo "DONE"
-	echo ""
+	return 0
 }
 
-clean_blade_check(){
-
-	echo "Checking that all blades in CH.$chassisNum.$bladeStart-$bladeEnd are clean..."
+clean_blade_check()
+{
+	echo "Checking blades: CH$chassisNum.$bladeStart-$bladeEnd are clean"
 
 	declare -a clean_array=()
 	clean=true
@@ -61,17 +73,16 @@ clean_blade_check(){
     done
         ### Check clean variable to see if any unclean blades were found. Exit if so, return true if not.
     if [[ $clean == false ]]; then
-    	echo "Not all blades are clean, please check the blades and try again"
-    	exit;
+    	return 1
     else
-		echo "DONE"
-		echo ""
+		return 0
 	fi
 }
 
-mastership_check(){
-
+mastership_check()
+{
 	echo "Checking XFM Mastership"
+
 	host=$(hostname)
 	mastership=$(puremastership list)
 
@@ -86,18 +97,17 @@ mastership_check(){
 	### Check if host=master, if not, then exit w/ prompt to rerun on master (X)FM
 	if [[ $host == $master ]]; then
 		echo "Running on Master XFM"
-		echo "DONE"
-		echo ""
+		return 0
 	elif [[ $host != $master ]]; then
-		echo "$host is not the master XFM. Please rerun on $master"
-		exit;
+		return 1
 	else
-			echo "Unknown error"
-			exit;
+			echo -e "${RED}ERROR${NC}: Unknown error"
+			return 1
 	fi
 }
 
-blade_add(){
+blade_add()
+{
 	for ((i=$bladeStart;i<=$bladeEnd;i++))
 	do
 	    echo "Adding blade CH$chassisNum.FB$i using node ID"
@@ -112,16 +122,83 @@ blade_add(){
 	done
 }
 
+### Comment all of this stuff out until its ready to be hashed out.
+
+help()
+{
+	echo "HELP"
+}
+
+scan()
+{
+	### Scan for unclaimed blades and also check for clean blades. Grab Node ID
+	echo "SCANNING"
+}
+
+parse_params()
+{
+	range=$1
+	echo $1 | grep -oP '.*?(?<=\.)' ##-n2.1-13
+}
+
+### idiomatic parameter and option handling in sh
+#while test $# -gt 0
+#do
+#    case "$1" in
+#        -h) ### Display help message
+#			help
+#            ;;
+#        -n*) ## Use -n format for fbupgrade script
+#			parse_params
+#            ;;
+#        --scan)
+#			scan
+#            ;;
+#        *) echo "argument $1"
+#            ;;
+#    esac
+#    shift
+#done
+
+
 
 ### In the future you could have function return a TRUE/FALSE and then use if func() and test that from in here and add the echo output here
 while true; do
     read -p "You have selected the following blades: CH$chassisNum.FB$bladeStart-$bladeEnd is this correct? [Y]es [N]o: " yn
     case $yn in
         [Yy]* ) 
-			populate_array "$chassisNum" "$bladeStart" "$bladeEnd"
-			clean_blade_check "$chassisNum" "$bladeStart" "$bladeEnd"
-			mastership_check
-			blade_add "$chassisNum" "$bladeStart" "$bladeEnd"
+			if populate_array "$chassisNum" "$bladeStart" "$bladeEnd"; then
+				echo -e "${GREEN}DONE${NC}"
+				echo ""
+			else
+				echo -e "${RED}ERROR${NC}: Could not populate array"
+				echo ""
+				failure=true
+			fi
+
+			if clean_blade_check "$chassisNum" "$bladeStart" "$bladeEnd"; then
+				echo -e "${GREEN}DONE${NC}"
+				echo ""
+			else
+			    echo -e "${RED}ERROR${NC}: Not all blades are clean, please check the blades and try again"
+    			echo ""	
+    			failure=true
+			fi
+
+			if mastership_check; then
+				echo -e "${GREEN}DONE${NC}"
+				echo ""
+			else
+				echo -e "${RED}ERROR${NC}: $host is not the master XFM. Please rerun on $master"
+				echo ""
+				failure=true
+			fi
+
+			if [[ -z $failure ]]; then
+				blade_add "$chassisNum" "$bladeStart" "$bladeEnd"
+			else
+				echo -e "Could not add blades. Please fix the ${RED}ERROR${NC}(s) above."
+			fi
 			break;;
         [Nn]* ) 
 			exit;;
